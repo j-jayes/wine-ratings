@@ -47,15 +47,16 @@ get_last_page <- function(url){
     mutate(value = parse_number(value)) %>% 
     filter(!is.na(value))
   
-  pages
+  pages %>% pull(value)
   
 }
 
 url <- "https://winemag.co.za/wine/review/"
 
-get_last_page(url)
+latest_page_number <- get_last_page(url)
 
-latest_page_number <- 301
+# this does not need to be hard coded.
+# latest_page_number <- 301
 
 ```
 
@@ -147,5 +148,6 @@ reviews <- list_of_links %>%
            
 st <- format(Sys.time(), "%Y-%m-%d~%I-%M-%p")
 write_rds(reviews, paste("data/reviews/reviews_",st, ".rds", sep = ""))
+
 ```
 
