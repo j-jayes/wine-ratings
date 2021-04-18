@@ -1,0 +1,151 @@
+---
+title: "wine-scraper"
+author: "JJayes"
+date: "18/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(pacman)
+
+p_load(tidyverse, rvest, glue)
+```
+
+
+### Purpose
+
+Scraper to get the reviews from the website [winemag.co.za](https://winemag.co.za/wine/review/).
+
+### Structure
+
+Consists of a few functions. 
+
+- First we need the number of pages to scrape.
+- Then we get a list of the pages where the reviews are listed.
+- Get all of these URLs, get the link to each individual review
+- Go to the individual reviews, get what we want from the html.
+
+### Number of pages
+
+```{r}
+# get the number of pages
+get_last_page <- function(url){
+  
+  html <- read_html(url)
+  
+  pages_data <- html %>% 
+    html_nodes(".page-numbers") %>% 
+    html_text() %>% 
+    str_extract("[0-9][0-9].")
+  
+  pages <- pages_data %>% 
+    unname() %>% 
+    as.character() %>%  
+    as_tibble() %>% 
+    mutate(value = parse_number(value)) %>% 
+    filter(!is.na(value))
+  
+  pages
+  
+}
+
+url <- "https://winemag.co.za/wine/review/"
+
+get_last_page(url)
+
+latest_page_number <- 301
+
+```
+
+### List of pages with review links
+
+```{r}
+list_of_pages <- str_c(url, "page/", 1:latest_page_number) %>% 
+  as_tibble() %>% 
+  transmute(link = value) %>% 
+  mutate(page = as.integer(str_remove_all(link, "https://winemag.co.za/wine/review/page/")))
+
+```
+
+### Get review links from list of reviews
+
+```{r}
+link <- "https://winemag.co.za/wine/review/page/2/"
+
+# function that gets the urls for each review from the different pages
+get_review_links <- function(link){
+  html <- read_html(link)
+  
+  message(glue("Getting URLs from: {link}"))
+  
+  html %>% 
+    html_nodes(".content-container a:nth-child(1)") %>% 
+    html_attr("href")
+}
+
+```
+
+### Iterate through list of reviews
+
+```{r}
+# creates a list of links from each page
+list_of_links <- list_of_pages %>%
+  filter(row_number() <= 10) %>% 
+  mutate(text = map(link, possibly(get_review_links, otherwise = "failed", quiet = F)))
+
+list_of_links <- list_of_links %>% 
+  unnest(text)
+
+st <- format(Sys.time(), "%Y-%m-%d~%I-%M-%p")
+write_rds(list_of_links, paste("data/links/list_of_links_",st, ".rds", sep = ""))
+
+```
+
+## Now we have the list of links, we want to get the content from each review.
+
+```{r}
+
+review_url <- "https://winemag.co.za/wine/review/a-a-badenhorst-new-releases-2/"
+
+get_review_content <- function(review_url){
+  
+  message(glue("Getting review content from {review_url}"))
+  
+  html <- read_html(review_url)
+  
+  title <- html %>% 
+    html_nodes("h1") %>% 
+    html_text()
+  
+  content <- html %>% 
+    html_nodes(".content p") %>% 
+    html_text() %>% 
+    as_tibble() %>% 
+    mutate(value = str_split(value,"\n")) %>% 
+    unnest(value)
+  
+  date <- html %>% 
+    html_node(".offset-lg-2 .heading-5") %>% 
+    html_text() %>% 
+    str_remove_all("By Christian Eedes, ")
+  
+  tibble(title, content, date)
+  
+}
+
+get_review_content("https://winemag.co.za/wine/review/a-a-badenhorst-new-releases-2/")
+
+```
+
+### Iteratre to get the review titles, contents and dates
+
+```{r}
+reviews <- list_of_links %>% 
+    mutate(text = map(review_url, possibly(get_review_content, "failed")))
+           
+st <- format(Sys.time(), "%Y-%m-%d~%I-%M-%p")
+write_rds(reviews, paste("data/reviews/reviews_",st, ".rds", sep = ""))
+```
+
