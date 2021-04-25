@@ -109,21 +109,45 @@ df <- df %>%
          text = str_remove(text, "^[:space:][7-9][0-9]"))
 ```
 
+Scores as numbers - remove other cols
 
 ```{r}
-df %>% 
+df <- df %>% 
   select(-c(wine_review_locations, wine_index, review_start, review)) %>% 
-  mutate(wine_scores = parse_number(wine_scores)) %>% 
+  mutate(wine_scores = parse_number(wine_scores))
+```
+
+Get price
+
+```{r}
+df <- df %>% 
+  # get price from review
+  mutate(price = str_extract(text, "R[1-9][0-9]+"),
+         price_R = parse_number(price))
+
+df %>% 
+  ggplot(aes(wine_scores, price_R, colour = review_date)) +
+  geom_smooth(method = "lm") +
+  geom_jitter(alpha = .5) +
+  scale_y_log10()
+
+df %>% 
   ggplot(aes(review_date, wine_scores)) +
+  geom_smooth(method = "lm") +
   geom_point()
+
+df %>% view()
+
+df %>% 
+  filter(!is.na(price))
 
 ```
 
 
 
 ```{r}
-
 df %>% 
-  filter(review_url == "https://winemag.co.za/wine/review/bloemendal-kanonberg-2013/") %>% pull(review)
+  count(wine_scores, sort = T)
+
 ```
 
