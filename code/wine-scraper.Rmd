@@ -55,6 +55,8 @@ url <- "https://winemag.co.za/wine/review/"
 
 latest_page_number <- get_last_page(url)
 
+latest_page_number
+
 # this does not need to be hard coded.
 # latest_page_number <- 301
 
@@ -100,8 +102,9 @@ list_of_links <- list_of_links %>%
   unnest(text)
 
 st <- format(Sys.time(), "%Y-%m-%d~%I-%M-%p")
-write_rds(list_of_links, paste("data/links/list_of_links_",st, ".rds", sep = ""))
+# write_rds(list_of_links, paste("data/links/list_of_links_",st, ".rds", sep = ""))
 
+list_of_links
 ```
 
 ## Now we have the list of links, we want to get the content from each review.
@@ -140,14 +143,15 @@ get_review_content("https://winemag.co.za/wine/review/a-a-badenhorst-new-release
 
 ```
 
-### Iteratre to get the review titles, contents and dates
+### Iterate to get the review titles, contents and dates
 
 ```{r}
 reviews <- list_of_links %>% 
     mutate(text = map(review_url, possibly(get_review_content, "failed")))
            
 st <- format(Sys.time(), "%Y-%m-%d~%I-%M-%p")
-write_rds(reviews, paste("data/reviews/reviews_",st, ".rds", sep = ""))
+# write_rds(reviews, paste("data/reviews/reviews_",st, ".rds", sep = ""))
 
+reviews
 ```
 
