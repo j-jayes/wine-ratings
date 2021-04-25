@@ -136,18 +136,19 @@ df %>%
   geom_smooth(method = "lm") +
   geom_point()
 
-df %>% view()
-
-df %>% 
-  filter(!is.na(price))
 
 ```
 
+### Things still to get
 
+- Vintage.
+- Varietals.
 
 ```{r}
 df %>% 
   count(wine_scores, sort = T)
+
+write_rds(df, "data/clean-data/reviews_1.rds")
 
 ```
 

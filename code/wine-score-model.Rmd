@@ -7,24 +7,136 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidymodels)
 ```
 
-## R Markdown
+## Purpose
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+make a model to predict wine score based on price, review date and words
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+### Reading in data
 
-```{r cars}
-summary(cars)
+```{r}
+
+df <- read_rds("data/clean-data/reviews_1.rds")
+
 ```
 
-## Including Plots
+### Setting up splits
 
-You can also embed plots, for example:
+```{r}
+df <- df %>% 
+  select(title:price_R, -price, -n_wines) %>% 
+  filter(!is.na(price_R))
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+set.seed(123)
+tidy_split <- initial_split(df, strata = wine_scores)
+
+tidy_train <- training(tidy_split)
+tidy_test <- testing(tidy_split)
+
+set.seed(123)
+tidy_folds <- vfold_cv(tidy_train, strata = wine_scores)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+# Things to change in scraper and cleaning.
+
+- wine scores to score
+- price and price_R. Don't need both.
+- varietal
+- vintage
+
+### Make a recipe
+
+```{r}
+library(textrecipes)
+
+wine_rec <- recipe(wine_scores ~ ., data = df) %>% 
+  update_role(c(title, review_date), new_role = "id") %>% 
+  step_tokenize(text) %>% 
+  step_tokenfilter(text, max_tokens = 1000) %>% 
+  step_tfidf(text) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_normalize(all_numeric_predictors())
+
+wine_rec %>% prep() %>% juice()
+
+```
+
+### Make a model spec
+
+```{r}
+
+xgb_spec <- boost_tree(trees = tune(),
+                       min_n = tune(),
+                       learn_rate = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost")
+
+```
+
+### Make a parameter grid
+
+```{r}
+
+xgb_grid <- grid_regular(parameters(xgb_spec), 
+                         levels = 5)
+
+```
+
+### Apply the parameter grid to the model
+
+```{r}
+xgb_tune <- tune_grid(
+  xgb_spec,
+  wine_rec,
+  resamples = tidy_folds,
+  grid = xgb_grid
+)
+```
+
+### Select best params with tune pacakge using rmse
+
+```{r}
+xgb_param <- xgb_tune %>% 
+  select_best("rmse")
+
+```
+
+### Apply paramters to the model
+
+```{r}
+xgb_model <- finalize_model(xgb_spec, xgb_param)
+
+```
+
+### Workflow combines everything together - preprocessing, modelling, 
+
+```{r}
+xgb_wf <- workflow() %>% 
+  add_model(xgb_model) %>% 
+  add_recipe(wine_rec)
+
+```
+
+### Apply it to test set and extract metrics
+
+```{r}
+
+xgb_res <- last_fit(xgb_wf, tidy_split)
+
+xgb_res %>% 
+  unnest(.predictions)
+
+metrics(xgb_res %>% unnest(.predictions), truth = wine_scores, estimate = .pred)
+
+write_rds(xgb_res, "data/models/xbg_1.rds")
+
+
+```
+
