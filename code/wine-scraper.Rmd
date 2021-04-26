@@ -105,7 +105,7 @@ list_of_links <- list_of_links %>%
   unnest(text)
 
 st <- format(Sys.time(), "%Y-%m-%d~%I-%M-%p")
-# write_rds(list_of_links, paste("data/links/list_of_links_",st, ".rds", sep = ""))
+write_rds(list_of_links, paste("data/links/list_of_links_",st, ".rds", sep = ""))
 
 list_of_links
 ```
@@ -149,12 +149,18 @@ get_review_content <- function(review_url){
 ### Iterate to get the review titles, contents and dates
 
 ```{r}
+list_of_links <- readRDS("~/Recon/wine-ratings/data/links/list_of_links_2021-04-26~01-59-pm.rds")
+
 reviews <- list_of_links %>% 
-    mutate(text = map(review_url, possibly(get_review_content, "failed")))
+  filter(between(row_number(), 2000, 3001)) %>% 
+    mutate(text = map(text, possibly(get_review_content, "failed")))
            
 st <- format(Sys.time(), "%Y-%m-%d~%I-%M-%p")
-# write_rds(reviews, paste("data/reviews/reviews_",st, ".rds", sep = ""))
+write_rds(reviews, paste("data/reviews/reviews_third_1000", st, ".rds", sep = ""))
 
-reviews
+reviews <- `reviews_first_10002021-04-26~09-49-pm`
+
+reviews %>% 
+  unnest(text) %>% view()
 ```
 

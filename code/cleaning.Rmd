@@ -20,7 +20,13 @@ Cleaning the data scraped so that each wine is it's own row.
 ### Reading in data
 
 ```{r}
-df <- read_rds("data/reviews/reviews_2021-03-13 02-05-pm.rds")
+df_1 <- read_rds("data/reviews/reviews_first_10002021-04-26~09-49-pm.rds")
+
+df_2 <- read_rds("data/reviews/reviews_second_10002021-04-26~11-04-pm.rds")
+
+df_3 <- read_rds("data/reviews/reviews_third_10002021-04-26~11-58-pm.rds")
+
+df <- bind_rows(df_1, df_2, df_3)
 ```
 
 ### Cleaning
@@ -29,7 +35,7 @@ Unnest data
 
 ```{r}
 df <- df %>% 
-  unnest(c(text, title, review_date))
+  unnest(c(text))
 ```
 
 Remove lines with no text
@@ -40,6 +46,7 @@ df <- df %>%
 
 
 df <- df %>% 
+  mutate(review_url = str_c(link, title)) %>% 
   group_by(review_url) %>% 
   mutate(review = paste0(value, collapse = " ")) %>% 
   ungroup()
@@ -144,6 +151,8 @@ df %>%
 - Vintage.
 
 To get vintage I think we should do str_extract from title a year beginning with 2[0-9][0-9][0-9]. 
+
+Then a case_when statement to say if I get an NA, look in the text. If I get two values, wait
 
 - Varietals.
 
