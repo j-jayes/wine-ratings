@@ -142,6 +142,9 @@ df %>%
 ### Things still to get
 
 - Vintage.
+
+To get vintage I think we should do str_extract from title a year beginning with 2[0-9][0-9][0-9]. 
+
 - Varietals.
 
 ```{r}

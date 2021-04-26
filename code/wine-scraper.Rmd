@@ -95,9 +95,12 @@ get_review_links <- function(link){
 ```{r}
 # creates a list of links from each page
 list_of_links <- list_of_pages %>%
-  filter(row_number() <= 10) %>% 
   mutate(text = map(link, possibly(get_review_links, otherwise = "failed", quiet = F)))
+```
 
+Here is where I am.
+
+```{r}
 list_of_links <- list_of_links %>% 
   unnest(text)
 
@@ -111,7 +114,7 @@ list_of_links
 
 ```{r}
 
-review_url <- "https://winemag.co.za/wine/review/a-a-badenhorst-new-releases-2/"
+# review_url <- "https://winemag.co.za/wine/review/a-a-badenhorst-new-releases-2/"
 
 get_review_content <- function(review_url){
   
@@ -139,7 +142,7 @@ get_review_content <- function(review_url){
   
 }
 
-get_review_content("https://winemag.co.za/wine/review/a-a-badenhorst-new-releases-2/")
+# get_review_content("https://winemag.co.za/wine/review/a-a-badenhorst-new-releases-2/")
 
 ```
 

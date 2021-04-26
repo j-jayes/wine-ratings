@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+devtools::install_github("tidymodels/parsnip")
 library(tidyverse)
 library(tidymodels)
 ```
@@ -58,6 +59,7 @@ library(textrecipes)
 
 wine_rec <- recipe(wine_scores ~ ., data = df) %>% 
   update_role(c(title, review_date), new_role = "id") %>% 
+  # step_date(review_date, keep_original_cols = F) %>% 
   step_tokenize(text) %>% 
   step_tokenfilter(text, max_tokens = 1000) %>% 
   step_tfidf(text) %>% 
@@ -78,6 +80,10 @@ xgb_spec <- boost_tree(trees = tune(),
   set_mode("regression") %>% 
   set_engine("xgboost")
 
+svm_spec <- svm_linear() %>% 
+  set_mode("regression") %>% 
+  set_engine("LiblineaR")
+
 ```
 
 ### Make a parameter grid
@@ -86,6 +92,13 @@ xgb_spec <- boost_tree(trees = tune(),
 
 xgb_grid <- grid_regular(parameters(xgb_spec), 
                          levels = 5)
+
+svm_grid <- grid_regular(parameters(svm_spec),
+                         levels = 5)
+
+svm_wf <- workflow() %>% 
+  add_recipe(wine_rec) %>% 
+  add_model(svm_spec)
 
 ```
 
@@ -97,6 +110,17 @@ xgb_tune <- tune_grid(
   wine_rec,
   resamples = tidy_folds,
   grid = xgb_grid
+)
+```
+
+### Fit resamples to the 
+
+```{r}
+svm_res <- fit_resamples(
+  svm_wf,
+  tidy_folds,
+  control = control_resamples(save_pred = T)
+  
 )
 ```
 
@@ -127,7 +151,6 @@ xgb_wf <- workflow() %>%
 ### Apply it to test set and extract metrics
 
 ```{r}
-
 xgb_res <- last_fit(xgb_wf, tidy_split)
 
 xgb_res %>% 
@@ -136,7 +159,41 @@ xgb_res %>%
 metrics(xgb_res %>% unnest(.predictions), truth = wine_scores, estimate = .pred)
 
 write_rds(xgb_res, "data/models/xbg_1.rds")
+```
 
+### Same for SVM
+
+```{r}
+metrics(svm_res %>% 
+  unnest(.predictions), truth = wine_scores, estimate = .pred)
+
+collect_metrics(svm_res)
+```
+
+
+
+```{r}
+svm_final <- fit(
+  svm_wf,
+  df
+  
+)
+
+svm_final %>% collect_metrics()
+
+write_rds(svm_final, "model.rds")
+
+```
+
+### Pull workflow fit
+
+```{r}
+svm_fit <- pull_workflow_fit(svm_final$.workflow[[1]])
+
+tidy(svm_fit) %>% 
+  filter(term != "Bias") %>% 
+  mutate(type = if_else(str_detect(term, "tfidf_text_"), "text", "other predictor")) %>% 
+  mutate(term = str_remove(term, "tfidf_text_")) %>% 
 
 ```
 
