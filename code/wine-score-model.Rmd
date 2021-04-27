@@ -21,17 +21,25 @@ make a model to predict wine score based on price, review date and words
 
 ```{r}
 
-df <- read_rds("data/clean-data/reviews_1.rds")
+df <- read_rds("data/clean-data/reviews_2.rds")
 
 ```
+
+### Check data
+
+```{r}
+df <- df %>% 
+  select(-price, -n_wines, -review_url, -id, -n_wines) %>% 
+  filter(!is.na(price_R))
+
+df %>% skimr::skim()
+```
+
+Have to impute missing vintages
 
 ### Setting up splits
 
 ```{r}
-df <- df %>% 
-  select(title:price_R, -price, -n_wines) %>% 
-  filter(!is.na(price_R))
-
 set.seed(123)
 tidy_split <- initial_split(df, strata = wine_scores)
 
@@ -54,20 +62,29 @@ tidy_folds <- vfold_cv(tidy_train, strata = wine_scores)
 
 ### Make a recipe
 
+Things to think about in the recipe.
+
+Remove stopwords.
+
+use the pos filter to get rid of some things. keep only verbs, nouns and adjectives? see [textrecipes](https://textrecipes.tidymodels.org/reference/step_pos_filter.html)
+
 ```{r}
 library(textrecipes)
 
 wine_rec <- recipe(wine_scores ~ ., data = df) %>% 
-  update_role(c(title, review_date), new_role = "id") %>% 
-  # step_date(review_date, keep_original_cols = F) %>% 
+  update_role(c(review_number), new_role = "id") %>% 
+  step_date(date, keep_original_cols = F) %>%
   step_tokenize(text) %>% 
+  step_tokenize(title) %>% 
   step_tokenfilter(text, max_tokens = 1000) %>% 
-  step_tfidf(text) %>% 
-  step_dummy(all_nominal_predictors()) %>% 
-  step_normalize(all_numeric_predictors())
+  step_tokenfilter(title, max_tokens = 500) %>% 
+  # step_tfidf(text) %>%
+  # step_tfidf(title) %>% 
+  step_impute_knn(vintage) %>% 
+  step_dummy(all_nominal_predictors()) 
+  # step_normalize(all_numeric_predictors())
 
 wine_rec %>% prep() %>% juice()
-
 ```
 
 ### Make a model spec
@@ -173,15 +190,23 @@ collect_metrics(svm_res)
 
 
 ```{r}
+# this is the one to save it as a model
 svm_final <- fit(
   svm_wf,
   df
   
 )
 
+# this one has it as a workflow
+svm_final <- last_fit(
+  svm_wf,
+  tidy_split
+  
+)
+
 svm_final %>% collect_metrics()
 
-write_rds(svm_final, "model.rds")
+# write_rds(svm_final, "model.rds")
 
 ```
 
@@ -190,10 +215,22 @@ write_rds(svm_final, "model.rds")
 ```{r}
 svm_fit <- pull_workflow_fit(svm_final$.workflow[[1]])
 
+
 tidy(svm_fit) %>% 
-  filter(term != "Bias") %>% 
-  mutate(type = if_else(str_detect(term, "tfidf_text_"), "text", "other predictor")) %>% 
-  mutate(term = str_remove(term, "tfidf_text_")) %>% 
+  filter(term != "Bias") %>%
+  group_by(sign = estimate > 0) %>% 
+  slice_max(abs(estimate), n = 20) %>% 
+  ungroup() %>% 
+  mutate(type = case_when(
+    
+    str_detect(term, "title") ~ "title",
+    str_detect(term, "text") ~ "text",
+    TRUE ~ "other")) %>% 
+  mutate(term = str_remove(term, "tfidf_title_"),
+         term = str_remove(term, "tfidf_text_")) %>% 
+  mutate(term = fct_reorder(term, estimate)) %>% 
+  ggplot(aes(estimate, term, fill = type)) +
+  geom_col()
 
 ```
 

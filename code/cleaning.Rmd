@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(scales)
 library(glue)
+library(stringi)
 ```
 
 ## Purpose
@@ -35,7 +36,9 @@ Unnest data
 
 ```{r}
 df <- df %>% 
-  unnest(c(text))
+  unnest(c(text)) %>% 
+  select(-text)
+
 ```
 
 Remove lines with no text
@@ -43,11 +46,42 @@ Remove lines with no text
 ```{r}
 df <- df %>% 
   filter(nchar(value) > 0)
+```
 
+I want to join again the review URL from the list of links to the df. I made a mistake with the scraping code.
+
+```{r}
+
+links <- read_rds("data/links/list_of_links_2021-04-26~01-59-pm.rds")
+
+links <- links %>% 
+  mutate(key = str_remove(text, "https://winemag.co.za/wine/review/"),
+         key = str_replace_all(key, "-", " "),
+         key = word(key)) %>% 
+  mutate(key = glue("{page}-{key}"))
 
 df <- df %>% 
-  mutate(review_url = str_c(link, title)) %>% 
-  group_by(review_url) %>% 
+  mutate(key = stri_trans_general(str = title, 
+                                   id = "Latin-ASCII"),
+         key = str_replace_all(key, "'", ""),
+         key = str_replace_all(key, "[:punct:]", " "),
+         key = str_to_lower(word(key))) %>% 
+  mutate(key = glue("{page}-{key}"))
+
+df <- df %>% 
+  left_join(links %>% select(text, key), by = "key")
+
+df <- df %>% 
+  rename(review_url = text) %>% 
+  select(-key)
+
+```
+
+
+```{r}
+df <- df %>% 
+  mutate(id = str_c(link, title)) %>% 
+  group_by(id) %>% 
   mutate(review = paste0(value, collapse = " ")) %>% 
   ungroup()
 
@@ -56,6 +90,13 @@ df <- df %>%
 
 df <- df %>% 
   distinct()
+
+df <- df %>% 
+  mutate(date = lubridate::dmy(date)) %>% 
+  arrange(date)
+
+df <- df %>% 
+  mutate(review_number = row_number())
 ```
 
 How many wines in this review?
@@ -71,6 +112,7 @@ What are the scores of these wines?
 ```{r}
 df <- df %>% 
   mutate(wine_scores = str_extract_all(review, 
+                                       # this says look ahead and see if you can see a rating: a number between 70 and 99 that is not followed by a percentage sign (like 70% syrah) and a piece of text. If you see this number, then extract it as the score.
                                      "(?=\\s[7-9][0-9](?!\\%|D|d))(\\s[7-9][0-9])"))
 ```
 
@@ -83,19 +125,19 @@ df <- df %>%
   unnest(wine_review_locations) %>%
   mutate(wine_review_locations = wine_review_locations[,1],
          wine_review_locations = as.numeric(wine_review_locations)) %>% 
-  distinct(review_url, wine_scores, wine_review_locations, .keep_all = T) %>%
-  group_by(review_url) %>% 
+  distinct(id, wine_scores, wine_review_locations, .keep_all = T) %>%
+  group_by(id) %>% 
   arrange(wine_review_locations) %>% 
   ungroup() %>% 
   arrange(review_number)
 
 ```
 
-How can we get the text from before each score only?
+How can we get the text for each wine in the review only?
 
 ```{r}
 df <- df %>% 
-  group_by(review_url) %>% 
+  group_by(review_number) %>% 
   mutate(wine_index = row_number()) %>% 
   mutate(review_start = case_when(
     
@@ -105,7 +147,9 @@ df <- df %>%
   )) %>% 
   ungroup() %>% 
   arrange(review_number) %>% 
-  mutate(text = substr(review, review_start, wine_review_locations))
+  mutate(text = if_else(n_wines > 1, substr(review, review_start, wine_review_locations), review))
+
+df %>% view()
 ```
 
 A bit of tidying up
@@ -132,35 +176,54 @@ df <- df %>%
   mutate(price = str_extract(text, "R[1-9][0-9]+"),
          price_R = parse_number(price))
 
+
 df %>% 
-  ggplot(aes(wine_scores, price_R, colour = review_date)) +
+  ggplot(aes(wine_scores, price_R, colour = date)) +
   geom_smooth(method = "lm") +
   geom_jitter(alpha = .5) +
   scale_y_log10()
 
 df %>% 
-  ggplot(aes(review_date, wine_scores)) +
+  ggplot(aes(date, wine_scores)) +
   geom_smooth(method = "lm") +
-  geom_point()
-
-
+  geom_point(alpha = .1)
 ```
 
 ### Things still to get
 
 - Vintage.
 
-To get vintage I think we should do str_extract from title a year beginning with 2[0-9][0-9][0-9]. 
+NICE!
 
-Then a case_when statement to say if I get an NA, look in the text. If I get two values, wait
+```{r}
+
+df <- df %>% 
+  mutate(vintage = case_when(
+    n_wines == 1 ~ str_extract(title, "[1-2][0-9][0-9][0-9]"),
+    n_wines > 1 ~ if_else(str_detect(title, "[1-2][0-9][0-9][0-9]"), 
+                          str_extract(title, "[1-2][0-9][0-9][0-9]"),
+                          str_extract(text, "[1-2][0-9][0-9][0-9]")
+    ),
+    TRUE ~ "Error")) %>% 
+  mutate(vintage = parse_number(vintage))
+
+df %>% 
+  filter(nchar(text) > 50) %>% 
+  arrange(nchar(text)) %>% view()
+
+```
 
 - Varietals.
+
+### Cleaning before using the text recipe
+
+Need to remove all of the numbers and punctuation from the text and titles.
 
 ```{r}
 df %>% 
   count(wine_scores, sort = T)
 
-write_rds(df, "data/clean-data/reviews_1.rds")
+write_rds(df, "data/clean-data/reviews_2.rds")
 
 ```
 
