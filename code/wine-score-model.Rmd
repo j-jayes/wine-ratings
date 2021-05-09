@@ -70,19 +70,22 @@ use the pos filter to get rid of some things. keep only verbs, nouns and adjecti
 
 ```{r}
 library(textrecipes)
+library(spacyr)
 
 wine_rec <- recipe(wine_scores ~ ., data = df) %>% 
   update_role(c(review_number), new_role = "id") %>% 
   step_date(date, keep_original_cols = F) %>%
-  step_tokenize(text) %>% 
-  step_tokenize(title) %>% 
+  step_tokenize(text, engine = "spacyr") %>% 
+  step_pos_filter(text, keep_tags = c("NOUN", "ADJ", "VERB")) %>%
+  step_tokenize(title,  engine = "spacyr") %>% 
+  step_pos_filter(text, keep_tags = c("NOUN", "ADJ", "VERB")) %>%
   step_tokenfilter(text, max_tokens = 1000) %>% 
   step_tokenfilter(title, max_tokens = 500) %>% 
-  # step_tfidf(text) %>%
-  # step_tfidf(title) %>% 
+  step_tfidf(text) %>%
+  step_tfidf(title) %>%
   step_impute_knn(vintage) %>% 
-  step_dummy(all_nominal_predictors()) 
-  # step_normalize(all_numeric_predictors())
+  step_dummy(all_nominal_predictors()) %>% 
+  step_normalize(all_numeric_predictors())
 
 wine_rec %>% prep() %>% juice()
 ```
@@ -231,6 +234,29 @@ tidy(svm_fit) %>%
   mutate(term = fct_reorder(term, estimate)) %>% 
   ggplot(aes(estimate, term, fill = type)) +
   geom_col()
+
+
+tidy(svm_fit) %>% 
+  filter(str_detect(term, "Merl"))
+
+df %>% 
+  # date year
+  ggplot(aes(date, wine_scores)) +
+  geom_smooth(method = "lm") +
+  geom_point(alpha = .1)
+
+df %>% 
+  # date year
+  filter(price_R < 1000) %>% 
+  ggplot(aes(date, price_R)) +
+  geom_smooth(method = "lm") +
+  geom_point(alpha = .1)
+
+df %>% 
+  lm(price_R ~ date, data = .)
+
+df %>% 
+  lm(wine_scores ~ date, data = .)
 
 ```
 

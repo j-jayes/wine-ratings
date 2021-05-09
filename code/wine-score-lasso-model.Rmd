@@ -1,0 +1,153 @@
+---
+title: "wine-score-lasso-model"
+author: "JJayes"
+date: "09/05/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+```
+
+## Purpose
+
+predict score with lasso model and get positive and negative terms
+
+### Reading in data
+
+```{r}
+
+df <- read_rds("data/clean-data/reviews_2.rds")
+
+```
+
+### Check data
+
+```{r}
+df <- df %>% 
+  select(-price, -n_wines, -review_url, -id, -n_wines) %>% 
+  filter(!is.na(price_R))
+
+df %>% skimr::skim()
+
+df <- df %>% 
+  drop_na()
+```
+
+
+### EDA
+
+```{r}
+df %>% 
+  filter(vintage > 1990) %>% 
+  ggplot(aes(vintage, wine_scores)) +
+  geom_smooth() +
+  geom_jitter()
+
+```
+
+### Initial split
+
+```{r}
+set.seed(123)
+tidy_split <- initial_split(df, strata = wine_scores)
+tidy_train <- training(tidy_split)
+tidy_test <- testing(tidy_split)
+
+tidy_folds <- vfold_cv(tidy_train)
+```
+
+### Lasso rec
+
+```{r}
+library(textrecipes)
+
+lasso_rec <- recipe(wine_scores ~ ., data = tidy_train) %>% 
+  update_role(title, new_role = "id") %>%
+  update_role(review_number, new_role = "id") %>%
+  step_impute_mean(vintage) %>% 
+  step_tokenize(text) %>% 
+  step_stopwords(text) %>% 
+  step_tokenfilter(text, max_tokens = 500) %>% 
+  step_tfidf(text) %>% 
+  step_date(date, keep_original_cols = F) %>% 
+  step_normalize(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors(), one_hot = T)
+
+lasso_rec %>% prep() %>% juice()
+
+```
+
+### Lasso spec
+
+```{r}
+lasso_spec <- linear_reg(penalty = tune(), mixture = 1) %>% 
+  set_mode("regression") %>% 
+  set_engine("glmnet")
+```
+
+### Lasso grid
+
+```{r}
+lasso_grid <- grid_regular(parameters(lasso_spec), levels = 5)
+
+```
+
+### Lasso workflow
+
+```{r}
+lasso_wf <- workflow() %>% 
+  add_model(lasso_spec) %>% 
+  add_recipe(lasso_rec)
+
+
+```
+
+
+
+```{r}
+lasso_tune <- tune_grid(
+  lasso_wf,
+  resamples = tidy_folds,
+  grid = lasso_grid
+)
+
+lasso_tune %>% 
+  collect_metrics() %>% 
+  ggplot(aes(penalty,mean, colour = .metric)) +
+  geom_line() +
+  facet_wrap(~ .metric, scales = 'free')
+
+lasso_final <- lasso_tune %>% select_best("rmse")
+
+final_wf <- finalize_workflow(lasso_wf, lasso_final)
+
+
+
+```
+
+### Variable importance
+
+```{r}
+library(vip)
+
+token_importance <- final_wf %>% 
+  fit(tidy_train) %>% 
+  pull_workflow_fit() %>% 
+  vi(lambda = lasso_final$penalty)
+
+token_importance %>% 
+  group_by(Sign) %>% 
+  slice_max(n = 20, Importance) %>% 
+  ungroup() %>% 
+  mutate(Importance = abs(Importance),
+         Varible = str_remove(Variable, "tfidf_text_"),
+         Variable = fct_reorder(Varible, Importance)) %>% 
+  ggplot(aes(Importance, Variable, fill = Sign)) +
+  geom_col(show.legend = F)
+
+```
+
